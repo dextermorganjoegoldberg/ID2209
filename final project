@@ -1,0 +1,568 @@
+/**
+* Name: Final Project 
+* Author:Zhinan Gao && Jinyao Zhou
+*/
+
+model project
+
+
+
+global{
+	int happy_guests <- 0;
+	int unhappy_guests <- 0;
+	
+	int number_of_guests <- 50;
+	
+	list<string> personality_types <- ["Extrovert", "Neutral", "Introvert"];
+	list<string> diet_types <- ["Vegan", "Non-vegan"];
+	list<string> music_types <- ["Rock", "Punk", "Rap"];
+
+	agent target <- nil;
+	list<Guest> list_of_guests;
+	
+	
+	init{
+		create Guest number: number_of_guests{
+			personality_type <- personality_types[rnd(0,2)];
+			diet_type <- diet_types[rnd(0,1)];
+			music_type <- music_types[rnd(0, 2)];
+			
+			add self to: list_of_guests;
+		}
+		
+		create DanceFloor{
+			location <- {70,50};
+		}
+		create FoodStand{
+			location <- {20,20};
+		}
+		create Bar{
+			location <- {80,80};
+		}
+		create MusicBall{
+			location <- {55,50};
+		}
+		create happinessAssessor{
+			location <- {0,0};
+		}
+	}
+
+}
+
+species DanceFloor {
+	aspect base {
+		draw rectangle(50.0,90.0)  ;
+	}
+}
+
+species FoodStand{
+	aspect base {
+		rgb agentColor <- rgb("bisque");
+		draw rectangle(15.0,12.0) color: agentColor;
+	}
+}
+species MusicBall{
+	aspect base {
+		rgb agentColor <- rgb("black");
+		draw square(7.0) color: agentColor;
+	}
+}
+species Bar{
+	bool drawn <- false;
+	
+	aspect base {
+		rgb agentColor <- rgb("chocolate");
+		draw triangle(15.0) color: agentColor;
+	}
+}
+
+species Guest skills: [fipa,moving]{
+	string personality_type;
+	string diet_type;
+	string music_type;
+	point targetPoint <- nil;
+	point danceSpot <- nil;
+	
+	//Attributes
+	float nice;
+	float talkative;
+	float generous;
+	
+	//Needs
+	float hunger <- rnd(0.0,0.5) max: 1.0 update: hunger + rnd(0.05);
+	float thirst <- rnd(0.0,0.5) max: 1.0 update: thirst + rnd(0.05);
+	float dance_need <- rnd(0.0,0.5) max: 1.0 update: dance_need + rnd(0.01);
+	float music_need <- rnd(0.0,0.5) max: 1.0 update: music_need + rnd(0.01);
+	
+	//Value to measure
+	float happiness <- 0.5 max: 1.0 min: 0.0; 
+	
+	bool hasTarget <- false; 
+	bool isAngry <- false;
+	
+	//Personality-specific
+	float makeNoise <- 0.0;
+	
+	init{
+		self.nice <- rnd(0.0, 1.0);
+		self.generous <- rnd(0.0, 1.0);
+		
+		if(self.personality_type = "Extrovert"){
+			self.talkative <- rnd(0.3, 1.0);
+		}
+		if(self.personality_type = "Neutral"){
+			self.talkative <- rnd(0.1, 1.0);
+		}
+		else{
+			self.talkative <- rnd(0.0, 1.0);
+		}
+	}
+	
+	aspect base{
+		if(diet_type = "Vegan"){
+			draw sphere(1) at: location + {0,0,5}  color: #white;
+		}
+		else if(diet_type = "Non-vegan"){
+			draw sphere(1) at: location + {0,0,5} color: #black;
+		}
+		if(personality_type = "Extrovert"){
+			draw cone3D(2,4) at: location color: #red;
+			self.makeNoise <- self.makeNoise + rnd(0.01);
+		}
+		else if(personality_type = "Neutral"){
+			draw cone3D(2,4) at: location color: #green;
+			self.makeNoise <- self.makeNoise + rnd(0.005);
+		}
+		else if(personality_type = "Introvert"){
+			draw cone3D(2,4) at: location color: #blue;
+		}
+	}
+	
+	reflex moveToTarget when: self.targetPoint != nil
+	{
+		do goto target: self.targetPoint;
+	}
+	
+	reflex wanderAround when: self.targetPoint = nil and self.hasTarget = false{
+		do wander;
+	}
+	reflex randomWalk when: time mod rnd(10,80) = 0 and self.hasTarget = false{
+		self.targetPoint <- {rnd(5,95),rnd(5,95)};
+		self.hasTarget <- true;
+	}
+	
+
+	reflex timeToEat when: self.hunger >= 1.0 and self.hasTarget = false{
+		self.targetPoint <- {20,20};
+		self.hasTarget <- true;
+	}
+	
+	reflex timeToDrink when: self.thirst >= 1.0 and self.hasTarget = false{
+		self.targetPoint <- {80,80};
+		self.hasTarget <- true;
+	}
+	
+	reflex timeToDance when: self.dance_need >= 1.0 and self.hasTarget = false{
+		self.danceSpot <- {rnd(50,85), rnd(15,85)};
+		self.targetPoint <- self.danceSpot;
+		self.hasTarget <- true;
+	}
+	reflex timeToListenMusic when: self.music_need >= 1.0 and self.hasTarget = false {
+        self.targetPoint <- {55, 50}; 
+        self.hasTarget <- true;
+    }
+	
+	
+	reflex getAngry when: self.happiness = 0.0{
+		self.isAngry <- true;
+	}
+	
+	reflex atTarget when: self.location = self.targetPoint and self.hasTarget = true{
+		if self.location = {20,20}{
+			//write("" + self + " is eating");
+			//add self to: foodStandList;
+			self.hunger <- 0.0;
+			self.thirst <- 0.0;
+			self.dance_need <- 0.0;
+			self.music_need <- 0.0;
+			if(self.makeNoise >= 1.0){
+				list<Guest> nearbyGuests <- Guest at_distance 15;
+				write("" + self + " is making noise at the food stand");
+				if(length(nearbyGuests) > 0){
+					do start_conversation with: (to :: nearbyGuests, protocol :: 'no-protocol', performative :: 'inform', contents :: [self, "noise"]);
+					write("List being sent the food stand noise message: " + nearbyGuests);
+				}
+				self.makeNoise <- 0.0;
+			}
+			list<Guest> nearbyGuests <- Guest at_distance 15;
+			if(length(nearbyGuests) > 0){
+				if(self.diet_type = "Non-vegan"){
+					write("[_Diet_] "+"" + self + " is buying meat at the food stand");
+					do start_conversation with: (to :: nearbyGuests, protocol :: 'no-protocol', performative :: 'inform', contents :: [self, "meat-eating"]);
+				}
+				else{
+					write("[_Diet_] "+"" + self + " is buying vegan food at the food stand");
+					do start_conversation with: (to :: nearbyGuests, protocol :: 'no-protocol', performative :: 'inform', contents :: [self, "vegan"]);
+				}
+			}
+		}
+		else if self.location = {80,80}{
+			//write("" + self + " is drinking");
+			//add self to: barList;
+			self.thirst <- 0.0;
+			self.hunger <- 0.0;
+			self.dance_need <- 0.0;
+			self.music_need <- 0.0;
+			
+			if(self.makeNoise >= 1.0){
+				list<Guest> nearbyGuests <- Guest at_distance 15;
+				write("" + self + " is making noise at the bar");
+				if(length(nearbyGuests) > 0){
+					do start_conversation with: (to :: nearbyGuests, protocol :: 'no-protocol', performative :: 'inform', contents :: [self, "noise"]);
+					write("List being sent the bar noise message: " + nearbyGuests);
+				}
+				self.makeNoise <- 0.0;
+			}
+			if(self.personality_type = "Extrovert" or self.happiness > 0.5){
+				list<Guest> nearbyGuests <- Guest at_distance 15;
+				if(length(nearbyGuests) > 0){
+					do start_conversation with: (to :: [nearbyGuests[0]], protocol :: 'no-protocol', performative :: 'inform', contents :: [self, "ask to drink beer"]);
+					write("[_Personality_] "+"" + self + " is asking " + nearbyGuests[0] + " to drink some beer and have fun with them");
+				}
+			}
+			else if(self.generous >= 0.5 and self.happiness >= 0.5){
+				list<Guest> nearbyGuests <- Guest at_distance 15;
+				if(length(nearbyGuests) > 0){
+					do start_conversation with: (to :: [nearbyGuests[0]], protocol :: 'no-protocol', performative :: 'inform', contents :: [self, "drink"]);
+					write("[_Personality_] "+"" + self + " is offering to buy " + nearbyGuests[0] + " a drink");
+				}
+			}
+		}
+		else if self.location = {55, 50} {
+			//write("" + self + " is listening to music");
+			//add self to: MusicBallList;
+			self.thirst <- 0.0;
+			self.hunger <- 0.0;
+			self.dance_need <- 0.0;
+			self.music_need <- 0.0;
+			}
+			self.targetPoint <- nil;
+		    self.hasTarget <- false;
+			if(self.makeNoise >= 1.0){
+				list<Guest> nearbyGuests <- Guest at_distance 15;
+				write("" + self + " is making noise at the musicball");
+				if(length(nearbyGuests) > 0){
+					do start_conversation with: (to :: nearbyGuests, protocol :: 'no-protocol', performative :: 'inform', contents :: [self, "noise"]);
+					write("List being sent the bar noise message: " + nearbyGuests);
+				}
+				self.makeNoise <- 0.0;
+			}
+			if(self.nice >= 0.5 and self.happiness >= 0.5){
+			list<Guest> nearbyGuests <- Guest at_distance 15;
+				if(length(nearbyGuests) > 0){
+				if(self.music_type = "Rap"){
+					do start_conversation with: (to :: nearbyGuests, protocol :: 'no-protocol', performative :: 'inform', contents :: [self, "rap"]);
+				write("[_Music_] "+"" + self + " is asking " + nearbyGuests[0] + " to listen to Rap with them");
+				}
+				else if(self.music_type = "Rock"){
+					do start_conversation with: (to :: nearbyGuests, protocol :: 'no-protocol', performative :: 'inform', contents :: [self, "rock"]);
+				write("[_Music_] "+"" + self + " is asking " + nearbyGuests[0] + " to listen to Rock with them");
+				}
+				else if(self.music_type = "Punk"){
+					do start_conversation with: (to :: nearbyGuests, protocol :: 'no-protocol', performative :: 'inform', contents :: [self, "punk"]);
+				write("[_Music_] "+"" + self + " is asking " + nearbyGuests[0] + " to listen to Punk with them");
+				}
+			}
+          
+            }
+            
+            
+		else if self.location = self.danceSpot{	
+			//write("" + self + " is dancing");
+			//add self to: DanceFloorList;
+			self.danceSpot <- nil;
+			self.dance_need <- 0.0;
+			self.thirst <- 0.0;
+			self.hunger <- 0.0;
+			self.music_need <- 0.0;
+		}
+		self.targetPoint <- nil;
+		self.hasTarget <- false;
+		
+		if(self.personality_type = "Neutral" and self.talkative >= 0.5){
+			list<Guest> nearbyGuests <- Guest at_distance 15;
+			if(length(nearbyGuests) > 0){
+				write("[_Personality_] "+"" + self + " asked " + nearbyGuests[0] + " if they want to grab a snack at the food stand");
+				do start_conversation with: (to :: [nearbyGuests[0]], protocol :: 'no-protocol', performative :: 'inform', contents :: [self, "grab a snack"]);
+			}
+		}
+		if(self.talkative >= 0.5 and self.happiness >= 0.5){
+			list<Guest> nearbyGuests <- Guest at_distance 15;
+			if(length(nearbyGuests) > 0){
+				if(self.personality_type = "Extrovert"){
+					write("[_Personality_] "+"" + self + " asked " + nearbyGuests[0] + " to dance");
+					do start_conversation with: (to :: [nearbyGuests[0]], protocol :: 'no-protocol', performative :: 'inform', contents :: [self, "ask to dance"]);
+				}
+				else{
+					write("[_Personality_] "+"" + self + " talked to " + nearbyGuests[0]);
+					do start_conversation with: (to :: [nearbyGuests[0]], protocol :: 'no-protocol', performative :: 'inform', contents :: [self, "start chatting"]);
+				}	
+			}
+		}
+	}
+	
+	
+	reflex read_message when: !(empty(informs)){
+		message msg <- (informs at 0);
+		list<unknown> message_list <- msg.contents;
+		string messagecontent <- string(message_list[1]);
+		Guest messageSender <- Guest(message_list[0]);
+		
+		if(messagecontent = "noise" and self != messageSender){
+			if(self.personality_type = "Extrovert"){
+				write("[_Personality_] "+"" + self + " likes the noise made by " + messageSender);
+				self.happiness <- self.happiness + 0.1;
+			}
+			if(self.personality_type = "Introvert"){
+				write("[_Personality_] "+"" + self + " dislikes the noise made by " + messageSender);
+				self.happiness <- self.happiness - 0.3;
+			}
+			
+			if(self.personality_type = "Neutral"){
+				if(self.happiness >= 0.5){
+					write("[_Personality_] "+"" + self + " likes the noise made by " + messageSender);
+					self.happiness <- self.happiness + 0.1;
+				}
+				else{
+					write("[_Personality_] "+"" + self + " dislikes the noise made by " + messageSender);
+					self.happiness <- self.happiness - 0.2;
+				}
+			}
+			if(self.isAngry){
+				write("[_Personality_] "+"" + self + " is scolding the noise-maker");
+				self.isAngry <- false;
+				self.happiness <- 0.2;
+				do start_conversation with: (to :: [messageSender], protocol :: 'no-protocol', performative :: 'inform', contents :: [self, "scold"]);
+			}
+		}
+		
+		if(messagecontent = "start chatting"){
+			if(self.talkative >= 0.5 and self.happiness >= 0.5){
+				do start_conversation with: (to :: [messageSender], protocol :: 'no-protocol', performative :: 'inform', contents :: [self, "chat"]);
+				self.happiness <- self.happiness + 0.1;
+			}
+			else if(self.nice >= 0.8 and self.happiness >= 0.5){
+				do start_conversation with: (to :: [messageSender], protocol :: 'no-protocol', performative :: 'inform', contents :: [self, "praise"]);
+				self.happiness <- self.happiness + 0.1;
+			}
+			else if(self.isAngry){
+				write("[_Personality_] "+"" + self + " got mad that " + messageSender + " talked to them");
+				do start_conversation with: (to :: [messageSender], protocol :: 'no-protocol', performative :: 'inform', contents :: [self, "scold"]);
+				self.isAngry <- false;
+				self.happiness <- 0.2;
+			}
+			else if(self.talkative < 0.5 or self.happiness < 0.5){
+				write("[_Personality_] "+"" + self + " ignored " + messageSender);
+				messageSender.happiness <- messageSender.happiness - 0.3;
+			}
+		}
+		if(messagecontent = "ask to drink beer"){
+			if(self.personality_type = "Introvert" or happiness >= 0.5 and !(self.personality_type = "Introvert")){
+				write("[_Personality_] "+"" + self + " agreed to have a beer with " + messageSender);
+				self.thirst <- 0.0;
+				messageSender.thirst <- 0.0;
+				self.happiness <- self.happiness + 0.2;
+				messageSender.happiness <- messageSender.happiness + 0.2;
+			}
+			else if(self.isAngry){
+				write("[_Personality_] "+"" + self + " does not to Introvert and have a beer with " + messageSender + " right now");
+				do start_conversation with: (to :: [messageSender], protocol :: 'no-protocol', performative :: 'inform', contents :: [self, "scold"]);
+				self.isAngry <- false;
+				self.happiness <- 0.2;
+			}
+			else{
+				write("[_Personality_] "+"" + self + " ignored " + messageSender);
+				messageSender.happiness <- messageSender.happiness - 0.2;
+			}
+		}
+		if(messagecontent = "grab a snack"){
+			if(self.happiness >= 0.5 or self.hunger < 0.5){
+				write("[_Diet_] "+"" + self + " agreed to grab a snack with " + messageSender);
+				self.hasTarget <- true;
+				self.targetPoint <- {20,20};
+				messageSender.hasTarget <- true;
+				messageSender.targetPoint <- {20,20};
+				self.happiness <- self.happiness + 0.1;
+				messageSender.happiness <- messageSender.happiness + 0.1;
+			}
+			else if(self.isAngry){
+				write("[_Diet_] "+"" + self + " does not want to grab a snack with " + messageSender + " right now");
+				do start_conversation with: (to :: [messageSender], protocol :: 'no-protocol', performative :: 'inform', contents :: [self, "scold"]);
+				self.isAngry <- false;
+				self.happiness <- 0.2;
+			}
+			else{
+				write("[_Diet_] "+"" + self + " ignored " + messageSender);
+				messageSender.happiness <- messageSender.happiness - 0.2;
+			}
+		}
+		if(messagecontent = "drink"){
+			if(self.isAngry){
+				write("[_Diet_] "+"" + self + " got mad at the drink offer from " + messageSender);
+				do start_conversation with: (to :: [messageSender], protocol :: 'no-protocol', performative :: 'inform', contents :: [self, "scold"]);
+				self.isAngry <- false;
+				self.happiness <- 0.2;
+			}
+		    if(self.happiness < 0.5){
+				write("[_Diet_] "+"" + self + " declined the drink from " + messageSender);
+				messageSender.happiness <- messageSender.happiness - 0.2;
+			}
+			else if(self.happiness >= 0.5){
+				write("[_Diet_] "+"" + self + " accepted the drink from " + messageSender);
+				self.happiness <- self.happiness + 0.1;
+				messageSender.happiness <- messageSender.happiness + 0.1;
+			}
+		}
+		if(messagecontent = "ask to dance"){
+			if(self.personality_type = "Extrovert" or happiness >= 0.5 and !(self.personality_type = "Introvert")){
+				write("[_Personality_] "+"" + self + " agreed to dance with " + messageSender);
+				point newDanceSpot <- {rnd(50,85), rnd(15,85)};
+				self.hasTarget <- true;
+				self.targetPoint <- newDanceSpot;
+				self.danceSpot <- newDanceSpot;
+				messageSender.hasTarget <- true;
+				messageSender.danceSpot <- newDanceSpot;
+				messageSender.targetPoint <- newDanceSpot;
+				self.happiness <- self.happiness + 0.2;
+				messageSender.happiness <- messageSender.happiness + 0.2;
+			}
+			else if(self.isAngry){
+				write("[_Personality_] "+"" + self + " does not want to dance with " + messageSender + " right now");
+				do start_conversation with: (to :: [messageSender], protocol :: 'no-protocol', performative :: 'inform', contents :: [self, "scold"]);
+				self.isAngry <- false;
+				self.happiness <- 0.2;
+			}
+			else{
+				write("[_Personality_] "+"" + self + " ignored " + messageSender);
+				messageSender.happiness <- messageSender.happiness - 0.2;
+			}
+		}
+		if(messagecontent = "chat"){
+			self.happiness <- self.happiness + 0.1;
+		}
+		if(messagecontent = "praise" and self != messageSender){
+            write("" + self + " received a praise");
+            self.happiness <- self.happiness + 0.2;
+        }
+		if(messagecontent = "scold" and self != messageSender){
+			write("" + self + " was scolded");
+			self.happiness <- self.happiness - 0.3;
+		}
+		
+		if(messagecontent = "inform" and self != messageSender){
+			if(self.happiness >= 0.5){
+				write("" + self + " is considering going vegan");
+				self.happiness <- self.happiness + 0.1;
+			}
+			else{
+				write("" + self + " does not want to hear about animals right now");
+				self.happiness <- self.happiness - 0.1;
+			}
+		}
+		if(messagecontent = "vegan" and self != messageSender){
+			if(self.diet_type = "Vegan"){
+				write("[_Diet_] "+"" + self + " likes to see people buying vegan food");
+				self.happiness <- self.happiness + 0.1;
+			}
+		}
+		if(messagecontent = "meat-eating" and self != messageSender){
+			if(self.diet_type = "Vegan"){
+				if(self.isAngry = true and self.nice < 0.5){
+					write("[_Diet_] "+"" + self + " is scolding the Non-vegan");
+					do start_conversation with: (to :: [messageSender], protocol :: 'no-protocol', performative :: 'inform', contents :: [self, "scold"]);
+					self.isAngry <- false;
+					self.happiness <- 0.2;
+				}
+				else if(self.happiness <= 0.5 and self.talkative >= 0.5){
+					write("[_Diet_] "+"" + self + " is informing the Non-vegan about animals");
+					do start_conversation with: (to :: [messageSender], protocol :: 'no-protocol', performative :: 'inform', contents :: [self, "inform"]);
+					self.happiness <- self.happiness + 0.1;
+				}
+			}
+		}
+		
+		if (messagecontent = "rock" and self != messageSender) {
+             if (self.music_type = "Rock") {
+                write("[_Music_] "+"" + self + " enjoys listening to Rock music");
+                self.happiness <- self.happiness + 0.2;
+            } else {
+                write("[_Music_] "+"" + self + " does not appreciate Rock music right now");
+                self.happiness <- self.happiness - 0.1;
+            }
+      } else if (messagecontent = "punk" and self != messageSender) {
+            if (self.music_type = "Punk") {
+                write("[_Music_] "+"" + self + " is engjoying Punk music");
+                self.happiness <- self.happiness + 0.1;
+            } else {
+                write("[_Music_] "+"" + self + " is not a fan of Punk music right now");
+                self.happiness <- self.happiness - 0.2;
+            }
+            
+        } else if (messagecontent = "rap" and self != messageSender) {
+            if (self.music_type = "Rap") {
+                write("[_Music_] "+"" + self + " is vibing to Rap music");
+                self.happiness <- self.happiness + 0.1;
+            } else {
+                write("[_Music_] "+"" + self + " is not a fan of Rap music right now");
+                self.happiness <- self.happiness - 0.1;
+            }
+        }
+	}
+}
+
+species happinessAssessor{
+	reflex measureHappiness when: every(100#cycles){
+		happy_guests <- 0;
+		unhappy_guests <- 0;
+		loop guest over: list_of_guests{
+			if(guest.happiness >= 0.5){
+				happy_guests <- happy_guests + 1;
+			}
+			else{
+				unhappy_guests <- unhappy_guests + 1;
+			}
+		}
+	}
+}
+
+experiment myExperiment type: gui
+{
+	output{
+		display myDisplay type: opengl{
+			species Guest aspect:base;
+			species DanceFloor aspect:base;
+			species FoodStand aspect:base;
+			species Bar aspect:base;
+			species MusicBall aspect:base;
+			species happinessAssessor;
+		}
+		display Chart1 refresh: every(100#cycles) {
+			chart "Happiness and unhappiness" type: pie { 
+				data "Happy people" value: happy_guests color: #yellow;
+				data "Unhappy people" value: unhappy_guests color: #blue;
+			}
+		}
+		display Chart2 refresh: every(500#cycles) {
+			chart "Happiness and unhappiness" type: series { 
+				data "Happy people" value: happy_guests color: #yellow;
+				data "Unhappy people" value: unhappy_guests color: #blue;
+			}
+		}
+		display Chart3 refresh: every(200#cycles) {
+			chart "Happiness and unhappiness" type: histogram { 
+				data "Happy people" value: happy_guests color: #yellow;
+				data "Unhappy people" value: unhappy_guests color: #blue;
+			}
+		}
+	}
+}
